@@ -19,9 +19,9 @@ def wav2spectrogram(audio_filepath):
     waveform, sample_rate = librosa.load(audio_filepath)
     # 将音频信号转换为梅尔频谱
     mel_spec = librosa.feature.melspectrogram(y=waveform, sr=sample_rate)
-    # 将梅尔频谱转换为对数刻度
-    log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
-    return log_mel_spec, sample_rate
+    # # 将梅尔频谱转换为对数刻度
+    # log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
+    return mel_spec, sample_rate
 
 
 def display_spectrogram(audio_filepath):
@@ -95,8 +95,9 @@ def get_dataset(video_root_dir, audio_root_dir):
     dataset = []
     for index in range(len(video_dir_list)):
         video_tensor = get_video_tensor(video_root_dir + video_dir_list[index])
-        audio_tensor = wav2spectrogram(audio_root_dir + audio_file_list[index])
-        sample = {'video_tensor': video_tensor, 'audio_tensor': audio_tensor}
+        audio_tensor = wav2spectrogram(audio_root_dir + audio_file_list[index])[0]
+        audio_tensor = torch.from_numpy(audio_tensor)
+        sample = [video_tensor, audio_tensor]
         dataset.append(sample)
     return dataset
 
@@ -104,4 +105,8 @@ def get_dataset(video_root_dir, audio_root_dir):
 video_root_dir = 'example/video/train/'
 audio_root_dir = 'example/wav/train/'
 dataset = get_dataset(video_root_dir, audio_root_dir)
-print(dataset)
+tensor1 = dataset[0]
+arr1 = tensor1[0][0].numpy()
+arr2 = tensor1[1][0].numpy()
+np.savetxt('temp.text', arr1)
+np.savetxt('temp2.text', arr2)
