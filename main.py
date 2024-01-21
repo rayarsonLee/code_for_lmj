@@ -8,6 +8,8 @@ import numpy as np
 import librosa.display
 import matplotlib.pyplot as plt
 import cv2
+from typing import List
+from torch.nn import functional as F
 
 
 def wav2spectrogram(audio_filepath):
@@ -87,7 +89,24 @@ def get_video_tensor(video_dir):
     return concat_tensor
 
 
+def get_audio_tensor(audio_dir):
+    """
+    获取音频tensor
+    :param audio_dir: 音频文件目录
+    :return: 音频tensor
+    """
+    audio_tensor = wav2spectrogram(audio_dir)[0]
+    audio_tensor = torch.from_numpy(audio_tensor)
+    return audio_tensor
+
+
 def get_dataset(video_root_dir, audio_root_dir):
+    """
+    获取数据集
+    :param video_root_dir: 视频根目录
+    :param audio_root_dir: 音频根目录
+    :return: tensor列表，0维视频tensor，1维音频tensor
+    """
     video_dir_list = os.listdir(video_root_dir)
     audio_file_list = os.listdir(audio_root_dir)
     video_dir_list.sort()
@@ -95,18 +114,90 @@ def get_dataset(video_root_dir, audio_root_dir):
     dataset = []
     for index in range(len(video_dir_list)):
         video_tensor = get_video_tensor(video_root_dir + video_dir_list[index])
-        audio_tensor = wav2spectrogram(audio_root_dir + audio_file_list[index])[0]
-        audio_tensor = torch.from_numpy(audio_tensor)
+        audio_tensor = get_audio_tensor(audio_root_dir + audio_file_list[index])
         sample = [video_tensor, audio_tensor]
         dataset.append(sample)
     return dataset
 
 
+def pad_dataset(dataset):
+    """
+    填充数据集到相同维度
+    :param dataset: 原始数据集，各个维度不同
+    :return: 填充后的数据集
+    """
+    dataset_video = []
+    dataset_audio = []
+    for i in range(len(dataset)):
+        dataset_video.append(dataset[i][0])
+    for i in range(len(dataset)):
+        dataset_audio.append(dataset[i][1])
+
+    max_dataset_video_dim0 = max(t.shape[0] for t in dataset_video)
+    max_dataset_audio_dim0 = max(t.shape[1] for t in dataset_audio)
+
+    padded_dataset_video = []
+    padded_dataset_audio = []
+    for tensor in dataset_video:
+        padded_tensor = torch.zeros((max_dataset_video_dim0, 256, 256), dtype=tensor.dtype)
+        padded_tensor[:tensor.shape[0], :, :] = tensor
+        padded_dataset_video.append(padded_tensor)
+
+    for tensor in dataset_audio:
+        padded_tensor = torch.zeros((128, max_dataset_audio_dim0), dtype=tensor.dtype)
+        padded_tensor[:, :tensor.shape[1]] = tensor
+        padded_dataset_audio.append(padded_tensor)
+
+    padded_dataset = []
+    for i in range(len(padded_dataset_video)):
+        padded_dataset.append([padded_dataset_video[i], padded_dataset_audio[i]])
+    return padded_dataset
+
+
+def get_padded_dataset(video_root_dir, audio_root_dir):
+    """
+    获取填充后的dataset
+    :param video_root_dir: 视频根目录
+    :param audio_root_dir: 音频根目录
+    :return: 填充后的dataset
+    """
+    dataset = get_dataset(video_root_dir, audio_root_dir)
+    dataset = pad_dataset(dataset)
+    return dataset
+
+
+def get_dataloader(video_root_dir, audio_root_dir):
+    dataset = get_padded_dataset(video_root_dir, audio_root_dir)
+    dataset_video, dataset_audio = dataset[0], dataset[1]
+    dataset = MyDataset(dataset_video, dataset_audio)
+    dataloader_params = {
+        'batch_size': 4,
+        'shuffle': True,
+        'num_workers': 4
+    }
+    dataloader = DataLoader(dataset, **dataloader_params)
+    return dataloader
+
+
+class MyDataset(Dataset):
+    """
+    自定义数据集类
+    """
+
+    def __init__(self, dataset_video, dataset_audio):
+        self.dataset_video = dataset_video
+        self.dataset_audio = dataset_audio
+        assert len(dataset_video) == len(dataset_audio)
+
+    def __len__(self):
+        return len(self.dataset_video)
+
+    def __getitem__(self, index):
+        return self.dataset_video[index], self.dataset_audio[index]
+
+
 video_root_dir = 'example/video/train/'
 audio_root_dir = 'example/wav/train/'
-dataset = get_dataset(video_root_dir, audio_root_dir)
-tensor1 = dataset[0]
-arr1 = tensor1[0][0].numpy()
-arr2 = tensor1[1][0].numpy()
-np.savetxt('temp.text', arr1)
-np.savetxt('temp2.text', arr2)
+dataset = get_padded_dataset(video_root_dir, audio_root_dir)
+for video, audio in dataset:
+    print(video.shape, audio.shape)
