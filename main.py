@@ -10,6 +10,10 @@ import matplotlib.pyplot as plt
 import cv2
 from typing import List
 from torch.nn import functional as F
+import torch.nn as nn
+
+# 我的设备是mac，所以是mps，windows将mps替换为cuda
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 
 def wav2spectrogram(audio_filepath):
@@ -196,8 +200,67 @@ class MyDataset(Dataset):
         return self.dataset_video[index], self.dataset_audio[index]
 
 
+class MyNetwork(nn.Module):
+    def __init__(self):
+        super(MyNetwork, self).__init__()
+
+        # 卷积部分（可选，用于处理图像特征）
+        self.conv_layers = nn.Sequential(
+            nn.Conv2d(in_channels=456, out_channels=2, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=8),
+            # 根据需要添加更多卷积层和池化层
+        )
+
+        # 平展操作，将卷积层输出转换为一维向量
+        self.flatten = nn.Flatten()
+
+        # 全连接层，用于映射到所需的输出维度
+        self.fc_out = nn.Linear((256 // 8) ** 2 * 2 , 128 * 104)
+
+    def forward(self, x):
+        x = self.conv_layers(x)
+        x = self.flatten(x)
+        output = self.fc_out(x)
+        output = output.view(-1, 128, 104)
+        return output
+
+
+# 创建模型实例
+model = MyNetwork()
+
+# 没有明确的损失函数，因为没有说明具体任务，实际应用中应选择合适的损失函数
+
 video_root_dir = 'example/video/train/'
 audio_root_dir = 'example/wav/train/'
 dataset = get_padded_dataset(video_root_dir, audio_root_dir)
-for video, audio in dataset:
-    print(video.shape, audio.shape)
+
+model = MyNetwork()
+model.to(device=device)
+# 定义损失函数，例如均方误差（MSE）用于回归问题
+loss_fn = nn.MSELoss()
+
+optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+dataloader_params = {
+    'batch_size': 1,  # 批次大小
+    'shuffle': True,  # 是否打乱数据顺序
+    'num_workers': 0,  # 数据加载线程数（默认为0，即在主进程上加载）
+}
+
+# 创建DataLoader
+data_loader = DataLoader(dataset=dataset, **dataloader_params)
+
+num_epochs = 10
+for epoch in range(num_epochs):
+    model.train()
+    for inputs, targets in data_loader:
+        print(inputs.shape)
+        inputs, targets = inputs.to(device=device), targets.to(device=device)
+        optimizer.zero_grad()
+        outputs = model(inputs).to(device=device)
+        print(outputs.shape)
+        loss = loss_fn(outputs, targets)
+        loss.backward()
+        optimizer.step()
+        print(loss)
