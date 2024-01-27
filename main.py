@@ -60,14 +60,16 @@ def get_all_spectrogram(audio_dir):
     return spectrogram_list
 
 
-def load_image(image_filepath):
+def get_image_tensor(image_filepath):
     """
     加载图片
     :param image_filepath: 图片路径
     :return: 图片
     """
-    _image = Image.open(image_filepath)
-    return _image
+    # _image = Image.open(image_filepath).convert('RGB')
+    _image = cv2.imread(image_filepath)
+    transformed_img = torch.tensor(_image[..., ::-1].copy()).permute(2, 0, 1).float() / 255.0
+    return transformed_img
 
 
 def get_video_tensor(video_dir):
@@ -84,8 +86,8 @@ def get_video_tensor(video_dir):
     for image_file in video_files:
         # 加载图片
         image_path = os.path.join(video_dir, image_file)
-        image = load_image(image_path)
-        image_tensor = transforms.ToTensor()(image)
+        image_tensor = get_image_tensor(image_path)
+        # image_tensor = transforms.ToTensor()(image)
         if concat_tensor is None:
             concat_tensor = image_tensor
         else:
